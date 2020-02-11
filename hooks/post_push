@@ -1,3 +1,5 @@
+#!/bin/bash
+
 GIT_TAG=$(git describe --tags)
 docker tag $IMAGE_NAME $DOCKER_REPO:$GIT_TAG
 docker push $DOCKER_REPO:$GIT_TAG
