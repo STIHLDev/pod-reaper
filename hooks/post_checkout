@@ -1,0 +1,5 @@
+#!/bin/sh
+if [ $(git rev-parse --is-shallow-repository) = "true" ]; then
+	echo "Unshallowing repo..."
+    git fetch --tags --unshallow --quiet origin
+fi
