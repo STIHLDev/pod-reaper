@@ -6,14 +6,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/client-go/pkg/api/unversioned"
-	"k8s.io/client-go/pkg/api/v1"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func testDurationPod(startTime *time.Time) v1.Pod {
 	pod := v1.Pod{}
 	if startTime != nil {
-		setTime := unversioned.NewTime(*startTime)
+		setTime := metav1.NewTime(*startTime)
 		pod.Status.StartTime = &setTime
 	}
 	return pod
@@ -43,6 +43,14 @@ func TestDurationLoad(t *testing.T) {
 		assert.Equal(t, "", message)
 		assert.False(t, loaded)
 	})
+	t.Run("explicit load without default", func(t *testing.T) {
+		os.Clearenv()
+		os.Setenv(envExplicitLoad, ruleDuration)
+		loaded, message, err := (&duration{}).load()
+		assert.NoError(t, err)
+		assert.Equal(t, "maximum run duration loaded explicitly", message)
+		assert.True(t, loaded)
+	})
 }
 
 func TestDurationShouldReap(t *testing.T) {
@@ -69,6 +77,43 @@ func TestDurationShouldReap(t *testing.T) {
 	t.Run("no reap", func(t *testing.T) {
 		os.Clearenv()
 		os.Setenv(envMaxDuration, "2m1s")
+		duration := duration{}
+		duration.load()
+		startTime := time.Now().Add(-2 * time.Minute)
+		pod := testDurationPod(&startTime)
+		shouldReap, _ := duration.ShouldReap(pod)
+		assert.False(t, shouldReap)
+	})
+	t.Run("annotation override reap", func(t *testing.T) {
+		os.Clearenv()
+		os.Setenv(envMaxDuration, "5m")
+		duration := duration{}
+		duration.load()
+		startTime := time.Now().Add(-2 * time.Minute)
+		pod := testDurationPod(&startTime)
+		pod.Annotations = map[string]string{
+			annotationMaxDuration: "2m",
+		}
+		shouldReap, reason := duration.ShouldReap(pod)
+		assert.True(t, shouldReap)
+		assert.Regexp(t, ".*has been running.*", reason)
+	})
+	t.Run("annotation override no reap", func(t *testing.T) {
+		os.Clearenv()
+		os.Setenv(envMaxDuration, "1m59s")
+		duration := duration{}
+		duration.load()
+		startTime := time.Now().Add(-2 * time.Minute)
+		pod := testDurationPod(&startTime)
+		pod.Annotations = map[string]string{
+			annotationMaxDuration: "2m1s",
+		}
+		shouldReap, _ := duration.ShouldReap(pod)
+		assert.False(t, shouldReap)
+	})
+	t.Run("explicit load no annotation", func(t *testing.T) {
+		os.Clearenv()
+		os.Setenv(envExplicitLoad, ruleDuration)
 		duration := duration{}
 		duration.load()
 		startTime := time.Now().Add(-2 * time.Minute)
